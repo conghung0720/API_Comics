@@ -9,13 +9,13 @@ const dotenv = require("dotenv");
 
 const app = express();
 
-app.use(bodyParser.json({ limit: "500mb" }));
+app.use(bodyParser.json({ limit: "50mb" }));
 app.use(cors());
 dotenv.config();
 app.use(
   bodyParser.urlencoded({
     parameterLimit: 50000,
-    limit: "500mb",
+    limit: "50mb",
     extended: true,
   })
 );
@@ -32,7 +32,6 @@ app.get("/lhManga/:chapters/:chap", (res, req) => {
   try {
     axios
       .get(url)
-      .catch((error) => console.log(error.toJSON()))
       .then((res) => {
         const datas2 = [];
         const html = res.data;
@@ -47,7 +46,8 @@ app.get("/lhManga/:chapters/:chap", (res, req) => {
           datas2.push({ imgChapter: imageChapter });
         });
         req.status(200).json(datas2);
-      });
+      })
+      .catch((error) => console.log(error.toJSON()));
   } catch (err) {
     req.status(404).json("Wrong Url");
     console.error(err);
@@ -65,6 +65,7 @@ app.get("/lhManga/:chapters", (res, req) => {
         const $ = cheerio.load(html);
         let chapter = [];
         let chapterNumber = [];
+        let getTimeOfChapter = [];
         let tags = [];
         const data1 = [];
         $(".row.d-md-table.w-md-100").each((index, el) => {
@@ -95,7 +96,15 @@ app.get("/lhManga/:chapters", (res, req) => {
             $(this)
               .find("a div.chapter-name.text-truncate")
               .each(function () {
-                chapterNumber.push($(this).text().trim().split(" ")[1]);
+                const getChapter = $(this).text().trim().split(" ");
+                getChapter.shift();
+                chapterNumber.push(getChapter.join(" "));
+              });
+            $(this)
+              .find("a div.chapter-time")
+              .each(function () {
+                const getDate = $(this).text().split("/").reverse().join("/");
+                getTimeOfChapter.push(getDate);
               });
           });
 
@@ -129,11 +138,12 @@ app.get("/lhManga/:chapters", (res, req) => {
             tags: tags,
             days: days,
             time: timing,
-            views: views,
+            views: Number(views),
             img: img,
             summary: summary,
-            link: url.slice(43),
-            chapter_number: chapterNumber,
+            Link: url.slice(43),
+            chapter: chapterNumber,
+            timeChapter: getTimeOfChapter,
             chapter_url: chapter,
           };
           data1.push(data_of_lhmanga);
@@ -145,44 +155,101 @@ app.get("/lhManga/:chapters", (res, req) => {
     req.status(404).json("Wrong URL");
   }
 });
-console.log(process.env.api);
 
-//Routes
-app.get("/lhManga", (res, req) => {
-  const datas = [];
+app.get("/search", async (res, req) => {
+  const list = res.query.list;
+  const startPage = 1;
+  const endPage = 10;
+  const page = res.query.page;
+  const keyword = res.query.keyword;
+  let url;
+
   try {
-    axios
-      .get(`https://www.truyentranhlh.net/tim-kiem?sort=update&page=1`)
-      .then((res) => {
-        const html = res.data;
-        const $ = cheerio.load(html);
+    if (list === "update") url = `update`;
+    if (list === "top") url = `top`;
+    const datas = [];
+    const res = await axios.get(
+      `https://www.truyentranhlh.net/tim-kiem?q=${keyword}&page=${page}`
+    );
+    const html = await res.data;
+    const $ = cheerio.load(html);
 
-        $(".thumb-item-flow.col-6.col-md-2").each((index, el) => {
-          const data = $(el);
-          //link
-          const link = data.find("a").attr("href");
-          const Id = data.find("div").attr("data-id");
-          const img = data.find("div.content.img-in-ratio").attr("data-bg");
-          const title = data.find("div.thumb_attr.series-title a").text();
-          const chapter = data
-            .find("div.thumb_attr.chapter-title.text-truncate a")
-            .text()
-            .slice("Chapter".length);
-          datas.push({
-            Link: link.slice(43),
-            title: title,
-            chapter: chapter,
-            id: Id,
-            img: img,
-          });
-        });
-        req.status(200).json(datas);
-      })
-      .catch((error) => console.log(error.toJSON()));
+    $(".thumb-item-flow.col-6.col-md-2", html).each(function (index, el) {
+      // console.log(index);
+      const link = $(this).find("a").attr("href");
+      const Id = $(this).find("div").attr("data-id");
+      const img = $(this).find("div.content.img-in-ratio").attr("data-bg");
+      const title = $(this).find("div.thumb_attr.series-title a").text();
+      const chapter = $(this)
+        .find("div.thumb_attr.chapter-title.text-truncate a")
+        .text();
+
+      const getChapter = chapter.split(" ");
+      getChapter.shift();
+      getChapter.join(" ");
+
+      datas.push({
+        Link: link.slice(43),
+        title: title,
+        chapter: getChapter,
+        id: Id,
+        img: img,
+      });
+    });
+    req.status(200).json(datas);
   } catch (err) {
     req.status(404).json([]);
   }
 });
+
+//Routes
+app.get("/lhManga", async (res, req) => {
+  const list = res.query.list;
+  const limitPage = +res.query.page;
+  let url;
+
+  try {
+    if (list === "update") url = `update`;
+    if (list === "top") url = `top`;
+    const datas = [];
+    const res = await axios.get(
+      `https://www.truyentranhlh.net/tim-kiem?sort=${list}&page=${limitPage}`
+    );
+
+    const html = await res.data;
+    const $ = cheerio.load(html);
+
+    $(".thumb-item-flow.col-6.col-md-2", html).each(function (index, el) {
+      // console.log(index);
+      const link = $(this).find("a").attr("href");
+      const Id = $(this).find("div").attr("data-id");
+      const img = $(this).find("div.content.img-in-ratio").attr("data-bg");
+      const title = $(this).find("div.thumb_attr.series-title a").text();
+      const chapter = $(this)
+        .find("div.thumb_attr.chapter-title.text-truncate a")
+        .text();
+
+      const getChapter = chapter.split(" ");
+      getChapter.shift();
+      getChapter.join(" ");
+
+      datas.push({
+        Link: link.slice(43),
+        title: title,
+        chapter: getChapter,
+        id: Id,
+        img: img,
+      });
+    });
+
+    req.status(200).json(datas);
+    // }
+  } catch (err) {
+    req.status(404).json([]);
+  }
+});
+
+///
 
 //
 app.listen(process.env.PORT || 8000, () => {
